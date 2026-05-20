@@ -19,10 +19,10 @@ echo Port 5001 is clean!
 echo.
 
 :: 2. Set directory path to the active workspace
-echo [2/4] Navigating to LLS_NEW workspace...
-cd /d "c:\Users\USER\OneDrive\Desktop\NITK\LLS_NEW"
+echo [2/4] Navigating to Hybrid Reasoner workspace...
+cd /d "%~dp0"
 if %errorlevel% neq 0 (
-    echo [ERROR] Could not find the project directory: "c:\Users\USER\OneDrive\Desktop\NITK\LLS_NEW"
+    echo [ERROR] Could not find the project directory: "%~dp0"
     pause
     exit /b
 )
