@@ -1,0 +1,41 @@
+# Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Large Datasets (ConceptNet and large CLUTRR files)
+conceptnet_clean_triples.csv
+conceptnet_filtered.csv
+merged_all_triples.csv
+merged_triples.csv
+entity2idx.json
+clutrr_train.csv
+clutrr_triples_augmented.csv
+
+# Output / Prediction files
+submission_predictions.csv
+submission_predictions.zip
+learned_responses.json
+
+# Model Weights
+models/
+
+# System / IDE config
+.vscode/
+.idea/
+.DS_Store
+*.log
+training.log
+
+# Build / Distribution
+.dist/
+dist/
+build/
+*.egg-info/
+adversarial_stats.json
