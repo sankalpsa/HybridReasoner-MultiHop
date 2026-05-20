@@ -1,6 +1,9 @@
 import sys
 import os
 
+# Add parent directory to sys.path to allow importing from main directory
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 # Ensure standard output supports UTF-8 characters to prevent CP1252/Windows encoding errors
 try:
     sys.stdout.reconfigure(encoding='utf-8')
