@@ -4,7 +4,7 @@
 
 [![Accuracy](https://img.shields.io/badge/Accuracy-94.7%25-10B981?style=for-the-badge&logo=checkmarx&logoColor=white)](#key-results)
 [![Logical Consistency](https://img.shields.io/badge/Consistency-100%25-F59E0B?style=for-the-badge&logo=academia&logoColor=white)](#key-results)
-[![Status](https://img.shields.io/badge/Status-Under%20Review-3B82F6?style=for-the-badge&logo=googlescholar&logoColor=white)](#overview)
+[![Status](https://img.shields.io/badge/Status-In%20Preparation-3B82F6?style=for-the-badge&logo=googlescholar&logoColor=white)](#overview)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python&logoColor=white)](#prerequisites)
 [![Frameworks](https://img.shields.io/badge/PyTorch%20%7C%20Flask-D33C3C?style=for-the-badge&logo=pytorch&logoColor=white)](#prerequisites)
 [![Adversarial Tests](https://img.shields.io/badge/Adversarial%20Tests-Passing%20(80%2F80)-emerald?style=for-the-badge&logo=githubactions&logoColor=white)](#testing)
@@ -17,7 +17,7 @@
 > **Paper:** *Multi-hop Reasoning in Neural, Symbolic, and Hybrid Models*  
 > **Authors:** Sankalp B C, Sk Abdur Razaaq, Vathsala H, Dinesh Naik, Ch. Janaki, Sathyanarayana K B, S D Sudarsan  
 > **Affiliations:** National Institute of Technology Surathkal (NITK) & Centre for Development of Advanced Computing (C-DAC)  
-> **Status:** Submitted to *Applied Intelligence* (Under Review)
+> **Status:** In Preparation for *Applied Intelligence*
 
 ---
 
@@ -79,7 +79,7 @@ HybridReasoner-MultiHop/
 │   ├── hard_test_suite.py               # 10 adversarial extreme edge case scenarios
 │   └── continuous_adversarial_tester.py  # 80 generated randomized mutation tests
 └── Paper/
-    ├── Applied_intelligence_journal.pdf # Submitted manuscript / Preprint
+    ├── Applied_intelligence_journal.pdf # Draft manuscript / Preprint
     └── architecture.svg                 # High-fidelity workflow graphic
 ```
 
@@ -139,7 +139,7 @@ These suites verify multi-hop paths, reflexive same-name inputs, conversational 
   author  = {Sankalp, B C and Razaaq, Sk Abdur and Vathsala, H and 
              Naik, Dinesh and Janaki, Ch and Sathyanarayana, K B and 
              Sudarsan, S D},
-  journal = {Applied Intelligence (Under Review)},
+  journal = {Applied Intelligence (In Preparation)},
   year    = {2026}
 }
 ```
