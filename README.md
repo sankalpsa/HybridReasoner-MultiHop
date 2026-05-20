@@ -3,7 +3,7 @@
 > **Paper:** *Multi-hop Reasoning in Neural, Symbolic, and Hybrid Models*  
 > **Authors:** Sankalp B C, Sk Abdur Razaaq, Vathsala H, Dinesh Naik, Ch. Janaki, Sathyanarayana K B, S D Sudarsan  
 > **Affiliations:** National Institute of Technology Surathkal (NITK) & Centre for Development of Advanced Computing (C-DAC)  
-> **Journal:** Applied Intelligence
+> **Status:** Submitted to *Applied Intelligence* (Under Review)
 
 ---
 
@@ -93,7 +93,7 @@ HybridReasoner-MultiHop/
 │   ├── hard_test_suite.py              # Adversarial test battery (80 cases)
 │   └── continuous_adversarial_tester.py # Automated regression tester
 └── Paper/
-    ├── Applied_intelligence_journal.pdf # Published paper
+    ├── Applied_intelligence_journal.pdf # Submitted manuscript / Preprint
     └── *.png                            # Extracted figures
 ```
 
@@ -170,7 +170,7 @@ If you use this work, please cite:
   author  = {Sankalp, B C and Razaaq, Sk Abdur and Vathsala, H and 
              Naik, Dinesh and Janaki, Ch and Sathyanarayana, K B and 
              Sudarsan, S D},
-  journal = {Applied Intelligence},
+  journal = {Applied Intelligence (Under Review)},
   year    = {2026}
 }
 ```
