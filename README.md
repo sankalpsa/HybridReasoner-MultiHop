@@ -36,7 +36,7 @@
 
 The workflow routes unstructured text inputs through a modular, confidence-based hybrid selector (Algorithm 3):
 
-![Hybrid Reasoner Architecture](Paper/architecture.svg)
+![Hybrid Reasoner Architecture](Paper/architecture.svg?v=2)
 
 ### 🧩 The Modules
 1. **Conversational NLP Extraction (Algorithm 1):** Cascading regular expressions strip conversational noise, parse complex possessives, and dynamically resolve gendered pronouns (`he`, `she`) and first-person speaker references (`I`, `me`, `my`) to their correct entity antecedents.
