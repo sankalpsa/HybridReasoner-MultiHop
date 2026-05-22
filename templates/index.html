@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hybrid Reasoner — Neural-Symbolic Inference</title>
+    <meta name="description" content="Multi-hop kinship reasoning using BERT + FOL forward chaining over Horn clauses">
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        :root{
+            --bg-deep:#080b1a;--bg-card:rgba(255,255,255,0.04);
+            --border:rgba(255,255,255,0.08);--text:#e2e4ea;--text-dim:#8b8fa3;
+            --accent:#7c6aff;--accent-glow:rgba(124,106,255,0.25);
+            --green:#34d399;--amber:#fbbf24;--red:#f87171;--cyan:#22d3ee;
+            --radius:14px;
+        }
+        body{font-family:'Inter',system-ui,sans-serif;background:var(--bg-deep);
+             color:var(--text);min-height:100vh;padding:24px 16px;
+             display:flex;justify-content:center;align-items:flex-start}
+        body::before{content:'';position:fixed;inset:0;
+            background:radial-gradient(ellipse 80% 50% at 50% -20%,rgba(124,106,255,0.12),transparent),
+                        radial-gradient(ellipse 60% 40% at 80% 100%,rgba(34,211,238,0.06),transparent);
+            pointer-events:none;z-index:0}
+        .app{position:relative;z-index:1;max-width:820px;width:100%}
+
+        /* Header */
+        .header{display:flex;align-items:center;gap:14px;margin-bottom:28px}
+        .logo{width:44px;height:44px;border-radius:12px;
+              background:linear-gradient(135deg,var(--accent),var(--cyan));
+              display:flex;align-items:center;justify-content:center;font-size:22px;
+              box-shadow:0 4px 20px var(--accent-glow)}
+        .header h1{font-size:22px;font-weight:800;color:#fff;letter-spacing:-0.5px}
+        .header .sub{font-size:12px;color:var(--text-dim);margin-top:2px}
+        .pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;
+              font-weight:600;padding:3px 10px;border-radius:20px;margin-top:5px}
+        .pill-green{background:rgba(52,211,153,0.12);color:var(--green)}
+        .pill-green::before{content:'';width:6px;height:6px;border-radius:50%;
+                            background:var(--green);animation:blink 2s infinite}
+        @keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
+
+        /* Card */
+        .card{background:var(--bg-card);border:1px solid var(--border);
+              border-radius:var(--radius);padding:28px;margin-bottom:18px;
+              backdrop-filter:blur(12px)}
+
+        /* Form */
+        .field{margin-bottom:16px}
+        .field label{display:block;font-size:12px;font-weight:600;color:var(--text-dim);
+                     margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
+        textarea,input[type=text]{width:100%;padding:11px 14px;background:rgba(255,255,255,0.04);
+            border:1px solid var(--border);border-radius:10px;color:#fff;font-family:inherit;
+            font-size:14px;transition:border .2s,box-shadow .2s;resize:vertical}
+        textarea:focus,input:focus{outline:none;border-color:var(--accent);
+            box-shadow:0 0 0 3px var(--accent-glow)}
+        textarea{min-height:80px}
+        .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+
+        /* Buttons */
+        .btns{display:flex;gap:10px;margin-top:20px}
+        button{flex:1;padding:12px;border:none;border-radius:10px;font-size:14px;
+               font-weight:700;cursor:pointer;transition:all .25s}
+        .btn-go{background:linear-gradient(135deg,var(--accent),#5b8dee);color:#fff;
+                box-shadow:0 4px 18px var(--accent-glow)}
+        .btn-go:hover{transform:translateY(-2px);box-shadow:0 8px 28px var(--accent-glow)}
+        .btn-go:disabled{opacity:.5;transform:none;cursor:wait}
+        .btn-clr{background:rgba(255,255,255,0.06);color:var(--text-dim)}
+        .btn-clr:hover{background:rgba(255,255,255,0.1)}
+
+        /* Presets */
+        .presets{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
+        .preset{font-size:11px;padding:5px 10px;border-radius:8px;border:1px solid var(--border);
+                background:transparent;color:var(--text-dim);cursor:pointer;transition:.2s}
+        .preset:hover{border-color:var(--accent);color:#fff}
+
+        /* Result */
+        .result{display:none;margin-top:18px}
+        .result.show{display:block}
+        .result-inner{border-radius:var(--radius);padding:24px;border-left:4px solid transparent}
+        .result-inner.sym{background:rgba(124,106,255,0.08);border-left-color:var(--accent)}
+        .result-inner.neural{background:rgba(34,211,238,0.08);border-left-color:var(--cyan)}
+        .result-inner.err{background:rgba(248,113,113,0.08);border-left-color:var(--red)}
+        .result-inner.load{background:rgba(124,106,255,0.06);border-left-color:var(--accent)}
+        .answer-rel{font-size:32px;font-weight:800;color:#fff;margin:8px 0;text-transform:capitalize}
+        .badges{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
+        .badge{padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase}
+        .badge-sym{background:rgba(124,106,255,0.18);color:#b8a9ff}
+        .badge-neural-hi{background:rgba(34,211,238,0.18);color:var(--cyan)}
+        .badge-neural-lo{background:rgba(251,191,36,0.18);color:var(--amber)}
+        .badge-none{background:rgba(248,113,113,0.18);color:var(--red)}
+        .conf{padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700}
+        .conf-hi{background:rgba(52,211,153,0.15);color:var(--green)}
+        .conf-md{background:rgba(251,191,36,0.15);color:var(--amber)}
+        .conf-lo{background:rgba(248,113,113,0.15);color:var(--red)}
+
+        /* Entities */
+        .entities{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;color:var(--text-dim)}
+        .ent{font-weight:700;color:#fff;background:rgba(255,255,255,0.06);
+             padding:3px 10px;border-radius:6px}
+        .arrow{color:var(--accent)}
+
+        /* Proof */
+        .proof{margin-top:16px;background:rgba(0,0,0,0.25);border-radius:10px;padding:14px}
+        .proof summary{cursor:pointer;font-weight:600;font-size:12px;color:var(--text-dim);
+                       text-transform:uppercase;letter-spacing:.5px}
+        .proof pre{font-size:12px;color:#7dcea0;margin-top:8px;white-space:pre-wrap;line-height:1.7;
+                   font-family:'Cascadia Code','Fira Code',monospace}
+        .proof .step-fact{color:#8be9fd}
+        .proof .step-derived{color:#50fa7b}
+        .proof .step-answer{color:#f1fa8c;font-weight:700}
+        .proof .step-warn{color:var(--amber)}
+
+        /* Spinner */
+        .spin{display:inline-block;width:16px;height:16px;border:2.5px solid rgba(124,106,255,.25);
+              border-top-color:var(--accent);border-radius:50%;animation:rot .7s linear infinite;margin-right:8px}
+        @keyframes rot{to{transform:rotate(360deg)}}
+
+        .footer{text-align:center;margin-top:24px;font-size:11px;color:var(--text-dim)}
+        .footer a{color:var(--accent);text-decoration:none}
+    </style>
+</head>
+<body>
+<div class="app">
+    <div class="header">
+        <div class="logo">⚡</div>
+        <div>
+            <h1>Hybrid Reasoner</h1>
+            <div class="sub">Neural-Symbolic Multi-hop Inference Engine</div>
+            <div class="pill pill-green">System Online</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="presets">
+            <button class="preset" onclick="loadPreset(0)">2-hop Grandfather</button>
+            <button class="preset" onclick="loadPreset(1)">3-hop Grandmother</button>
+            <button class="preset" onclick="loadPreset(2)">Inverse Nephew</button>
+            <button class="preset" onclick="loadPreset(3)">7-hop Deep Chain</button>
+            <button class="preset" onclick="loadPreset(4)">Pronoun Coref</button>
+        </div>
+        <form id="frm">
+            <div class="field">
+                <label>Context / Narrative</label>
+                <textarea id="ctx" placeholder="Enter the family story here..."></textarea>
+            </div>
+            
+            <div class="field" id="live-graph-wrapper" style="margin-bottom: 20px;">
+                <label style="display: flex; align-items: center; gap: 8px;">
+                    <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); animation: blink 2s infinite;"></span>
+                    Live Story Visualizer
+                </label>
+                <div id="live-network" style="height: 260px; width: 100%; border: 1px solid var(--border); border-radius: 10px; background: rgba(0,0,0,0.25); position: relative;">
+                    <div id="live-placeholder" style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--text-dim); font-size: 13px; pointer-events: none;">
+                        Start typing a family story to visualize relations in real-time...
+                    </div>
+                </div>
+            </div>
+            <div class="field">
+                <label>Question</label>
+                <input type="text" id="q" placeholder="What is the relationship between X and Y?">
+            </div>
+            <div class="row2">
+                <div class="field"><label>Entity A</label>
+                    <input type="text" id="ea" placeholder="e.g. Zeus"></div>
+                <div class="field"><label>Entity B</label>
+                    <input type="text" id="eb" placeholder="e.g. Hermes"></div>
+            </div>
+            <div class="btns">
+                <button type="submit" class="btn-go" id="goBtn">Execute Reasoning</button>
+                <button type="reset" class="btn-clr">Clear</button>
+            </div>
+        </form>
+    </div>
+
+    <div id="res" class="result">
+        <div id="ri" class="result-inner"></div>
+    </div>
+
+    <div class="footer">
+        Hybrid Reasoner &mdash; BERT + FOL Forward Chaining &middot;
+        <a href="/health">Health Check</a>
+    </div>
+</div>
+
+<script>
+const PRESETS=[
+    {ctx:"Apollo is the father of Hermes. Zeus is the father of Apollo.",q:"What is Zeus to Hermes?",a:"Zeus",b:"Hermes"},
+    {ctx:"Apollo is the father of Hermes. Zeus is the father of Apollo. Gaia is the mother of Zeus.",q:"What is Gaia to Hermes?",a:"Gaia",b:"Hermes"},
+    {ctx:"Luke is the brother of Leia. Leia is the mother of Ben.",q:"What is Ben to Luke?",a:"Ben",b:"Luke"},
+    {ctx:"Apollo is the father of Hermes. Zeus is the father of Apollo. Cronus is the father of Zeus. Uranus is the father of Cronus. Gaia is the mother of Uranus.",q:"What is Gaia to Hermes?",a:"Gaia",b:"Hermes"},
+    {ctx:"Desya is my grandfather. Nirmala is his daughter.",q:"How am I related to Nirmala?",a:"Speaker",b:"Nirmala"},
+];
+function loadPreset(i){const p=PRESETS[i];
+    document.getElementById('ctx').value=p.ctx;document.getElementById('q').value=p.q;
+    document.getElementById('ea').value=p.a;document.getElementById('eb').value=p.b;
+    updateLiveGraph();}
+
+document.getElementById('frm').addEventListener('submit',async e=>{
+    e.preventDefault();
+    const ctx=document.getElementById('ctx').value.trim(),
+          q=document.getElementById('q').value.trim(),
+          ea=document.getElementById('ea').value.trim(),
+          eb=document.getElementById('eb').value.trim(),
+          btn=document.getElementById('goBtn');
+    if(!q&&!ctx){showErr('Provide a context or question');return}
+    btn.disabled=true;btn.textContent='Processing...';showLoad();
+    try{
+        const r=await fetch('/reason',{method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({context:ctx,question:q,entity_a:ea,entity_b:eb})});
+        const d=await r.json();
+        if(!r.ok){showErr(d.error||'Server error');return}
+        showOk(d);
+    }catch(err){showErr('Connection failed: '+err.message)}
+    finally{btn.disabled=false;btn.textContent='Execute Reasoning'}
+});
+
+function showLoad(){const box=document.getElementById('res'),ri=document.getElementById('ri');
+    box.className='result show';ri.className='result-inner load';
+    ri.innerHTML='<span class="spin"></span><strong>Running inference pipeline...</strong><p style="color:var(--text-dim);margin-top:6px;font-size:13px">Symbolic forward chaining → Neural fallback if needed</p>'}
+
+function showOk(d){const box=document.getElementById('res'),ri=document.getElementById('ri'),
+    a=d.answer||{},rel=a.relation||'unknown',conf=a.confidence||0,method=a.method||'none',
+    trace=a.proof_trace||[],ents=d.entities||{};
+    box.className='result show';
+    const isSym=method==='symbolic',isNH=method==='neural_high',isNL=method==='neural_low';
+    ri.className='result-inner '+(isSym?'sym':method==='none'?'err':'neural');
+    const confCls=conf>=.8?'conf-hi':conf>=.5?'conf-md':'conf-lo';
+    const badgeCls=isSym?'badge-sym':isNH?'badge-neural-hi':isNL?'badge-neural-lo':'badge-none';
+    const badgeTxt=isSym?'Symbolic':isNH?'Neural (High)':isNL?'Neural (Low)':'No Answer';
+    let h='<div style="font-size:12px;color:var(--text-dim);text-transform:uppercase;font-weight:600;letter-spacing:.5px">Answer</div>';
+    h+='<div class="answer-rel">'+esc(rel)+'</div>';
+    h+='<div class="badges"><span class="badge '+badgeCls+'">'+badgeTxt+'</span>';
+    h+='<span class="conf '+confCls+'">'+(conf*100).toFixed(1)+'% confidence</span></div>';
+    if(ents.entity_a||ents.entity_b){
+        h+='<div class="entities"><span class="ent">'+esc(ents.entity_a||'?')+'</span>';
+        h+='<span class="arrow">→</span><span class="ent">'+esc(ents.entity_b||'?')+'</span></div>'}
+    if(isNL)h+='<div style="margin-top:10px;padding:8px 12px;border-radius:8px;background:rgba(251,191,36,0.1);font-size:12px;color:var(--amber)">⚠ Low confidence — result may be unreliable</div>';
+    if(trace.length){h+='<div class="proof"><details open><summary>Proof Trace ('+trace.length+' steps)</summary><pre>';
+        trace.forEach(s=>{let cls='';
+            if(s.startsWith('FACT:'))cls='step-fact';
+            else if(s.startsWith('ANSWER'))cls='step-answer';
+            else if(s.startsWith('WARNING')||s.startsWith('NEURAL'))cls='step-warn';
+            else if(s.startsWith('DERIVED'))cls='step-derived';
+            h+='<span class="'+cls+'">'+esc(s)+'</span>\n'});
+        h+='</pre></details></div>'}
+        
+    // Add graph container
+    if (d.graph && d.graph.nodes && d.graph.nodes.length > 0) {
+        h+='<div style="margin-top:20px"><div style="font-size:12px;color:var(--text-dim);text-transform:uppercase;font-weight:600;margin-bottom:8px">Knowledge Graph Visualization</div>';
+        h+='<div id="mynetwork" style="height: 350px; width: 100%; border: 1px solid var(--border); border-radius: var(--radius); background: rgba(0,0,0,0.2);"></div></div>';
+    }
+    
+    ri.innerHTML=h;
+    
+    // Render graph if data exists
+    if (d.graph && d.graph.nodes && d.graph.nodes.length > 0) {
+        var container = document.getElementById('mynetwork');
+        
+        var coloredEdges = d.graph.edges.map(e => {
+            let edgeColor = 'rgba(255,255,255,0.2)';
+            let fColor = '#8b8fa3';
+            let dashStyle = false;
+            let eWidth = 1.5;
+            let fSize = 11;
+            
+            if (e.type === 'FACT') {
+                edgeColor = '#34d399'; // Green
+                fColor = '#34d399';
+                eWidth = 2;
+            } else if (e.type === 'DERIVED') {
+                edgeColor = '#fbbf24'; // Amber
+                fColor = '#fbbf24';
+                dashStyle = [5, 5];
+            } else if (e.type === 'ANSWER') {
+                edgeColor = '#f87171'; // Red
+                fColor = '#f87171';
+                eWidth = 3;
+                fSize = 14;
+            }
+            
+            return {
+                from: e.from, 
+                to: e.to, 
+                label: e.label.toUpperCase(), 
+                arrows: { to: { enabled: true, scaleFactor: 0.7 } },
+                width: eWidth,
+                color: { color: edgeColor, highlight: '#ffffff' }, 
+                font: { color: fColor, size: fSize, align: 'top', background: 'rgba(8,11,26,0.9)', strokeWidth: 0, bold: e.type === 'ANSWER' }, 
+                dashes: dashStyle
+            };
+        });
+
+        var styledNodes = d.graph.nodes.map(n => ({
+            id: n.id, 
+            label: n.label,
+            shape: 'box',
+            margin: {top: 10, bottom: 10, left: 16, right: 16},
+            color: {
+                background: '#151932', 
+                border: '#7c6aff',
+                highlight: { background: '#252a4a', border: '#a394ff' }
+            }, 
+            font: { color: '#ffffff', size: 14, face: 'Inter', bold: true },
+            borderWidth: 2,
+            shadow: { enabled: true, color: 'rgba(124,106,255,0.4)', size: 15, x: 0, y: 0 }
+        }));
+
+        var data = {
+            nodes: new vis.DataSet(styledNodes),
+            edges: new vis.DataSet(coloredEdges)
+        };
+        var options = {
+            physics: { 
+                enabled: true, 
+                solver: 'barnesHut', 
+                barnesHut: { gravitationalConstant: -3000, centralGravity: 0.3, springLength: 200, springConstant: 0.04 }
+            },
+            layout: { randomSeed: 42 },
+            interaction: { hover: true, tooltipDelay: 200 }
+        };
+        new vis.Network(container, data, options);
+    }
+}
+
+function showErr(m){const box=document.getElementById('res'),ri=document.getElementById('ri');
+    box.className='result show';ri.className='result-inner err';
+    ri.innerHTML='<strong style="color:var(--red)">Error</strong><p style="color:var(--text-dim);margin-top:4px">'+esc(m)+'</p>'}
+
+function esc(t){const d=document.createElement('div');d.textContent=t;return d.innerHTML}
+
+let liveNetwork = null;
+
+function debounce(func, wait) {
+    let timeout;
+    return function(...args) {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(this, args), wait);
+    };
+}
+
+const updateLiveGraph = debounce(async () => {
+    const ctx = document.getElementById('ctx').value.trim();
+    const placeholder = document.getElementById('live-placeholder');
+    
+    if (!ctx) {
+        if (placeholder) placeholder.style.display = 'flex';
+        if (liveNetwork) {
+            liveNetwork.destroy();
+            liveNetwork = null;
+        }
+        return;
+    }
+    
+    try {
+        const response = await fetch('/extract_graph', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ context: ctx })
+        });
+        
+        if (!response.ok) return;
+        
+        const data = await response.json();
+        
+        if (data.nodes && data.nodes.length > 0) {
+            if (placeholder) placeholder.style.display = 'none';
+            
+            const container = document.getElementById('live-network');
+            
+            const styledEdges = data.edges.map(e => ({
+                from: e.from,
+                to: e.to,
+                label: e.label.toUpperCase(),
+                arrows: { to: { enabled: true, scaleFactor: 0.7 } },
+                width: 2,
+                color: { color: '#34d399', highlight: '#ffffff' },
+                font: { 
+                    color: '#34d399', 
+                    size: 10, 
+                    align: 'top', 
+                    background: 'rgba(8,11,26,0.95)', 
+                    strokeWidth: 0 
+                }
+            }));
+            
+            const styledNodes = data.nodes.map(n => ({
+                id: n.id,
+                label: n.label,
+                shape: 'box',
+                margin: {top: 8, bottom: 8, left: 14, right: 14},
+                color: {
+                    background: '#151932',
+                    border: '#7c6aff',
+                    highlight: { background: '#252a4a', border: '#a394ff' }
+                },
+                font: { color: '#ffffff', size: 12, face: 'Inter', bold: true },
+                borderWidth: 2,
+                shadow: { enabled: true, color: 'rgba(124,106,255,0.3)', size: 10, x: 0, y: 0 }
+            }));
+            
+            const graphData = {
+                nodes: new vis.DataSet(styledNodes),
+                edges: new vis.DataSet(styledEdges)
+            };
+            
+            const options = {
+                physics: {
+                    enabled: true,
+                    solver: 'barnesHut',
+                    barnesHut: { gravitationalConstant: -2000, centralGravity: 0.3, springLength: 150, springConstant: 0.05 }
+                },
+                layout: { randomSeed: 42 },
+                interaction: { hover: true, tooltipDelay: 200 }
+            };
+            
+            if (liveNetwork) {
+                liveNetwork.destroy();
+                liveNetwork = null;
+            }
+            liveNetwork = new vis.Network(container, graphData, options);
+        } else {
+            if (placeholder) placeholder.style.display = 'flex';
+            if (liveNetwork) {
+                liveNetwork.destroy();
+                liveNetwork = null;
+            }
+        }
+    } catch (err) {
+        console.error('Error extracting live graph:', err);
+    }
+}, 300);
+
+document.getElementById('ctx').addEventListener('input', updateLiveGraph);
+
+document.getElementById('frm').addEventListener('reset', () => {
+    const placeholder = document.getElementById('live-placeholder');
+    if (placeholder) placeholder.style.display = 'flex';
+    if (liveNetwork) {
+        liveNetwork.destroy();
+        liveNetwork = null;
+    }
+});
+
+// Run live graph update immediately if there's initial context
+if (document.getElementById('ctx').value.trim()) {
+    updateLiveGraph();
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "antonym": 0,
+  "atlocation": 1,
+  "capableof": 2,
+  "causes": 3,
+  "desires": 4,
+  "hasa": 5,
+  "hascontext": 6,
+  "hasproperty": 7,
+  "instanceof": 8,
+  "isa": 9,
+  "madeof": 10,
+  "partof": 11,
+  "relatedto": 12,
+  "synonym": 13,
+  "usedfor": 14
+}
