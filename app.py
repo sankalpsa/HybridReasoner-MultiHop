@@ -28,7 +28,6 @@ def add_header(r):
     r.headers["Expires"] = "0"
     return r
 
-# ── Lazy neural module loading ──────────────────────────────────
 _neural_fn = None
 _neural_attempted = False
 
@@ -39,7 +38,6 @@ def get_neural_fn():
         return _neural_fn
     _neural_attempted = True
 
-    # 1) Try the Kaggle BERT model first (Highest accuracy, matches paper Sec 3.1)
     try:
         from kaggle_inference import get_kaggle_fn
         fn = get_kaggle_fn()
@@ -50,7 +48,6 @@ def get_neural_fn():
     except Exception as e:
         logger.warning(f"Kaggle BERT classifier not available ({e}), trying MLP...")
 
-    # 2) Fallback to MLP if Kaggle model fails
     try:
         from trained_neural import get_trained_neural
         module = get_trained_neural()
@@ -64,7 +61,6 @@ def get_neural_fn():
 
     return _neural_fn
 
-# ── Universal Query Entity Resolver ────────────────────────────────
 FIRST_PERSON_PRONOUNS = {"my", "i", "me", "mine", "myself"}
 
 STOP_WORDS_LOWER = {
@@ -111,7 +107,6 @@ def resolve_query_entities(question: str, context: str) -> tuple:
     except ImportError:
         return "?", "?"
 
-    # 1. Extract facts and resolved entities from context
     raw_facts = extract_facts_from_text(context)
     resolved_facts = resolve_coreferences(raw_facts)
     
@@ -124,7 +119,6 @@ def resolve_query_entities(question: str, context: str) -> tuple:
         if o.lower() not in ("speaker", "__last_entity__") and o.lower() not in FIRST_PERSON_PRONOUNS:
             known_entities.add(o)
             
-    # Check if a speaker identity was resolved
     speaker_name = getattr(resolved_facts, 'speaker_name', None)
     if not speaker_name:
         for s, r, o in raw_facts:
@@ -134,12 +128,10 @@ def resolve_query_entities(question: str, context: str) -> tuple:
                 elif o == "Speaker":
                     speaker_name = s
 
-
-    # Normalize question
     question_clean = re.sub(r"[^\w\s'-]", " ", question)
     words = question_clean.split()
     
-    extracted_entities = [] # list of (value, category)
+    extracted_entities = [] 
     
     i = 0
     while i < len(words):
@@ -147,7 +139,6 @@ def resolve_query_entities(question: str, context: str) -> tuple:
         w_clean = re.sub(r"'s$", "", w, flags=re.IGNORECASE).strip()
         w_lower = w_clean.lower()
         
-        # 1. Multi-word known entities first
         matched_len = 0
         matched_entity = None
         for ke in sorted(known_entities, key=len, reverse=True):
@@ -162,7 +153,6 @@ def resolve_query_entities(question: str, context: str) -> tuple:
             i += matched_len
             continue
             
-        # 2. Check single-word known entities
         matched_single = None
         for ke in known_entities:
             if ke.lower() == w_lower:
@@ -173,19 +163,16 @@ def resolve_query_entities(question: str, context: str) -> tuple:
             i += 1
             continue
             
-        # 3. Check first-person pronoun
         if w_lower in FIRST_PERSON_PRONOUNS:
             resolved_val = speaker_name if speaker_name else "Speaker"
             extracted_entities.append((resolved_val, 'pronoun'))
             i += 1
             continue
             
-        # 4. Check stop words or relationship words
         if w_lower in STOP_WORDS_LOWER or w_lower in RELATION_WORDS_LOWER:
             i += 1
             continue
             
-        # 5. Treat any other word (capitalized or not) of len > 1 as entity candidate
         if len(w_clean) > 1:
             extracted_entities.append((w_clean.title(), 'other'))
             i += 1
@@ -196,14 +183,12 @@ def resolve_query_entities(question: str, context: str) -> tuple:
     known_only = [val for val, cat in extracted_entities if cat == 'known']
     pronoun_only = [val for val, cat in extracted_entities if cat == 'pronoun']
     
-    # Apply prioritized matching:
-    # 1. If we have at least 2 known entities, use only known entities (prioritized)
     if len(known_only) >= 2:
         final_candidates = known_only
-    # 2. If known + pronouns give at least 2 candidates, use those (e.g. Sadhana and me)
+    
     elif len(known_only) + len(pronoun_only) >= 2:
         final_candidates = [val for val, cat in extracted_entities if cat in ('known', 'pronoun')]
-    # 3. Fallback to all candidates
+    
     else:
         final_candidates = [val for val, cat in extracted_entities]
         
@@ -211,12 +196,12 @@ def resolve_query_entities(question: str, context: str) -> tuple:
         return final_candidates[0], final_candidates[1]
     elif len(final_candidates) == 1:
         ent = final_candidates[0]
-        # If the question contains reflexive pronouns, query is reflexive (self)
+        
         reflexive_pronouns = {"himself", "herself", "myself", "self", "itself", "yourself"}
         words_lower = {w.lower() for w in words}
         if words_lower & reflexive_pronouns:
             return ent, ent
-        # Fallback to other entities from context if available
+        
         other_entities = [ke for ke in known_entities if ke.lower() != ent.lower()]
         if other_entities:
             return ent, other_entities[0]
@@ -225,11 +210,9 @@ def resolve_query_entities(question: str, context: str) -> tuple:
             
     return "?", "?"
 
-
 @app.route("/")
 def index():
     return render_template("index.html")
-
 
 @app.route("/reason", methods=["POST"])
 def reason():
@@ -244,7 +227,6 @@ def reason():
         if not question and not context:
             return jsonify({"error": "Provide a context or question"}), 400
 
-        # Resolve/extract entities
         first_person_pronouns = {"my", "i", "me", "mine", "myself"}
         needs_resolution = (
             not entity_a or not entity_b or 
@@ -259,22 +241,22 @@ def reason():
             if resolved_a != "?" and resolved_b != "?":
                 entity_a, entity_b = resolved_a, resolved_b
             else:
-                # 1. Try explicit 'between A and B'
+                
                 match = re.search(r"between\s+([a-zA-Z]+)\s+and\s+([a-zA-Z]+)", question, re.IGNORECASE)
                 if match:
                     entity_a, entity_b = match.group(1).title(), match.group(2).title()
                 else:
-                    # 2. Extract capitalized words ignoring stop words
+                    
                     potential_names = [w for w in re.findall(r"\b[A-Z][a-z]+\b", question) if w.lower() not in STOP_WORDS_LOWER]
                     if len(potential_names) >= 2:
                         entity_a, entity_b = potential_names[0], potential_names[-1]
                     else:
-                        # 3. Fallback to any noun-like words
+                        
                         any_words = [w for w in re.findall(r"\b[a-zA-Z]+\b", question) if w.lower() not in STOP_WORDS_LOWER and w.lower() not in RELATION_WORDS_LOWER and len(w) > 2]
                         if len(any_words) >= 2:
                             entity_a, entity_b = any_words[0].title(), any_words[-1].title()
                         else:
-                            # Graceful failure instead of 400
+                            
                             return jsonify({
                                 "answer": {"relation": "unknown", "confidence": 0.0, "method": "neural_low", "proof_trace": []},
                                 "entities": {"entity_a": "?", "entity_b": "?"},
@@ -296,7 +278,6 @@ def reason():
             neural_predict_fn=get_neural_fn(),
         )
         
-        # Parse proof trace into graph nodes/edges
         nodes_set = set()
         edges = []
         for step in result.get("proof_trace", []):
@@ -332,7 +313,6 @@ def reason():
     except Exception as e:
         logger.error(f"Error: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
-
 
 @app.route("/health", methods=["GET"])
 def health():

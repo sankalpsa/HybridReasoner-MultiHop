@@ -15,7 +15,6 @@ from rules import (
 
 logger = logging.getLogger(__name__)
 
-# Common genders map for name-based fallback (zero hardcoding helper)
 COMMON_GENDERS = {
     "sankalp": "M", "achal": "M", "bob": "M", "dave": "M", "siddharth": "M",
     "rahul": "M", "akhil": "M", "mohit": "M", "robert": "M", "zeus": "M",
@@ -26,7 +25,6 @@ COMMON_GENDERS = {
     "sarah": "F", "jane": "F", "eleanor": "F", "mary": "F", "charlotte": "F",
     "clara": "F", "ananya": "F", "maa": "F",
 }
-
 
 class ForwardChainingEngine:
     def __init__(self, max_iterations: int = 20):
@@ -39,7 +37,6 @@ class ForwardChainingEngine:
 
         relation_lower = relation.lower().strip()
         
-        # Canonical gender-swapping maps
         m2f = {
             "father": "mother",
             "son": "daughter",
@@ -94,20 +91,17 @@ class ForwardChainingEngine:
         for s, r, o in initial_facts:
             facts.add((s.lower().strip(), r.lower().strip(), o.lower().strip()))
 
-        # Initial gender inference and fact specialization
         genders = self._infer_genders(facts)
         facts = self._specialize_facts(facts, genders)
 
         proof_trace = [f"FACT: {r}({s}, {o})" for s, r, o in sorted(facts)]
 
-        # Check direct answer
         answer = self._check_query(facts, qs, qo)
         if answer:
             rel = rank_by_specificity(answer)
             proof_trace.append(f"ANSWER (direct): {rel}({qs}, {qo})")
             return {"success": True, "relation": rel, "confidence": 1.0, "proof_trace": proof_trace}
 
-        # Check inverse answer right at the start (0-iteration check)
         answer_inv = self._check_query(facts, qo, qs)
         if answer_inv:
             base = rank_by_specificity(answer_inv)
@@ -117,24 +111,21 @@ class ForwardChainingEngine:
                 return {"success": True, "relation": inv, "confidence": 1.0, "proof_trace": proof_trace}
 
         for iteration in range(self.max_iterations):
-            # Dynamic gender inference at the start of each iteration
             genders = self._infer_genders(facts)
             facts = self._specialize_facts(facts, genders)
 
-            # Build indexes for fast lookup
-            by_rel = defaultdict(list)          # rel -> [(s, o)]
-            by_rel_obj = defaultdict(set)       # (rel, obj) -> set of subjects
+            by_rel = defaultdict(list)
+            by_rel_obj = defaultdict(set)
             for s, r, o in facts:
                 by_rel[r].append((s, o))
                 by_rel_obj[(r, o)].add(s)
 
             new_facts = set()
 
-            # Composition rules: body1(x,y) ^ body2(y,z) -> head(x,z)
             for head, (b1, b2) in COMPOSITION_RULES:
-                for sx, ox in by_rel[b1]:       # body1(sx, ox)
-                    for sy, oy in by_rel[b2]:   # body2(sy, oy)
-                        if ox == sy:            # intermediate match
+                for sx, ox in by_rel[b1]:
+                    for sy, oy in by_rel[b2]:
+                        if ox == sy:
                             head_spec = self._specialize_relation_gender(head, sx, genders)
                             d = (sx, head_spec, oy)
                             if sx != oy and d not in facts:
@@ -143,7 +134,6 @@ class ForwardChainingEngine:
                                     f"DERIVED: {head_spec}({sx}, {oy}) via "
                                     f"{b1}({sx}, {ox}) ^ {b2}({sy}, {oy})")
 
-            # Inverse rules: body(x,y) -> head(y,x) dynamically gender-specialised
             for _, (body,) in INVERSE_RULES:
                 for sx, ox in by_rel[body]:
                     head = self._get_dynamic_inverse_head(body, ox, genders)
@@ -155,10 +145,8 @@ class ForwardChainingEngine:
                             proof_trace.append(
                                 f"DERIVED (inv): {head_spec}({ox}, {sx}) via {body}({sx}, {ox})")
 
-            # Same-subject rules: body(X,Y) ^ body(X,Z) -> head(Y,Z) where Y != Z
             for head, body in SAME_SUBJECT_RULES:
-                pairs = by_rel[body]  # list of (subject, object)
-                # Group objects by subject
+                pairs = by_rel[body]
                 subj_to_objs = defaultdict(list)
                 for sx, ox in pairs:
                     subj_to_objs[sx].append(ox)
@@ -166,7 +154,6 @@ class ForwardChainingEngine:
                     if len(objs) >= 2:
                         for i, y in enumerate(objs):
                             for z in objs[i+1:]:
-                                # Derive both directions
                                 for a, b in [(y, z), (z, y)]:
                                     head_spec = self._specialize_relation_gender(head, a, genders)
                                     d = (a, head_spec, b)
@@ -182,14 +169,12 @@ class ForwardChainingEngine:
 
             facts.update(new_facts)
 
-            # Check query
             answer = self._check_query(facts, qs, qo)
             if answer:
                 rel = rank_by_specificity(answer)
                 proof_trace.append(f"ANSWER (iter {iteration+1}): {rel}({qs}, {qo})")
                 return {"success": True, "relation": rel, "confidence": 1.0, "proof_trace": proof_trace}
 
-            # Check inverse direction using dynamic gender-specialised inverse
             answer_inv = self._check_query(facts, qo, qs)
             if answer_inv:
                 base = rank_by_specificity(answer_inv)
@@ -207,7 +192,6 @@ class ForwardChainingEngine:
         reliable_male = {"father", "son", "brother", "grandfather", "grandson", "uncle", "nephew", "father-in-law"}
         reliable_female = {"mother", "daughter", "sister", "grandmother", "granddaughter", "aunt", "niece", "mother-in-law"}
         
-        # Pass 1: Infer gender only from highly reliable gender-specific relations
         for _ in range(3):
             for s, r, o in facts:
                 s_clean = s.strip().lower()
@@ -219,7 +203,6 @@ class ForwardChainingEngine:
                     elif r_lower in reliable_female:
                         genders[s_clean] = 'F'
                         
-        # Pass 2: Infer gender from spouse relations only as a fallback if not already known
         for _ in range(3):
             for s, r, o in facts:
                 s_clean = s.strip().lower()
@@ -238,7 +221,6 @@ class ForwardChainingEngine:
                     elif r_lower == "wife":
                         genders[o_clean] = 'M'
                         
-        # Pass 3: Fallback to COMMON_GENDERS for names not explicitly typed in the story
         for k, v in COMMON_GENDERS.items():
             k_lower = k.lower()
             if k_lower not in genders:
@@ -325,10 +307,8 @@ class ForwardChainingEngine:
     def _check_query(self, facts, subject, obj):
         return [r for s, r, o in facts if s == subject and o == obj]
 
-
 def run_forward_chaining(facts, query_subject, query_object, max_iterations=20):
     return ForwardChainingEngine(max_iterations).solve(facts, query_subject, query_object)
-
 
 if __name__ == "__main__":
     demo = [("Apollo", "father", "Hermes"), ("Zeus", "father", "Apollo")]

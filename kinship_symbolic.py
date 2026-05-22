@@ -20,17 +20,11 @@ from inference_engine import run_forward_chaining
 
 logger = logging.getLogger(__name__)
 
-# ──────────────────────────────────────────────────────────────────
-# Backwards-compatible list subclass to carry speaker identity metadata
-# ──────────────────────────────────────────────────────────────────
 class ResolvedFactsList(list):
     def __init__(self, iterable=(), speaker_name=None):
         super().__init__(iterable)
         self.speaker_name = speaker_name
 
-# ──────────────────────────────────────────────────────────────────
-
-# Common genders map for name-based fallback (zero hardcoding helper)
 COMMON_GENDERS = {
     "sankalp": "M", "achal": "M", "bob": "M", "dave": "M", "siddharth": "M",
     "rahul": "M", "akhil": "M", "mohit": "M", "robert": "M", "zeus": "M",
@@ -42,16 +36,11 @@ COMMON_GENDERS = {
     "clara": "F",
 }
 
-# Pronouns used for coreference resolution (Algorithm 1)
-# ──────────────────────────────────────────────────────────────────
 FIRST_PERSON_PRONOUNS = {"my", "i", "me", "mine", "myself"}
 MALE_PRONOUNS = {"he", "him", "his", "himself"}
 FEMALE_PRONOUNS = {"she", "her", "hers", "herself"}
 THIRD_PERSON_PRONOUNS = MALE_PRONOUNS | FEMALE_PRONOUNS
 
-# ──────────────────────────────────────────────────────────────────
-# Relation words recognised by the fact extractor
-# ──────────────────────────────────────────────────────────────────
 RELATION_WORDS = (
     "father|mother|son|daughter|brother|sister|"
     "grandfather|grandmother|grandson|granddaughter|"
@@ -60,17 +49,12 @@ RELATION_WORDS = (
     "parent|child|sibling|cousin"
 )
 
-# ──────────────────────────────────────────────────────────────────
-# Smart-quote normalisation: convert curly quotes to straight ones
-# ──────────────────────────────────────────────────────────────────
 def clean_name(name: str) -> str:
     """Clean up extracted name by removing leading/trailing stop words, possessives, and spaces."""
     name = name.strip()
-    # Remove possessive 's
     name = re.sub(r"'s$", "", name, flags=re.IGNORECASE).strip()
     name = re.sub(r"'$", "", name, flags=re.IGNORECASE).strip()
     
-    # Strip common leading conjunctions/adverbs/prepositions that might get captured by regexes
     leading_strip = [
         "also", "and", "but", "then", "so", "meet", "introducing", "this is", "that is",
         "to", "with", "for", "about", "of", "the", "a", "an", "called", "named",
@@ -81,11 +65,10 @@ def clean_name(name: str) -> str:
         pattern = rf"^{w}\s+"
         text_len = len(name)
         name = re.sub(pattern, "", name, flags=re.IGNORECASE).strip()
-        while len(name) < text_len: # Keep stripping if there are multiple e.g. "this guy named"
+        while len(name) < text_len:
             text_len = len(name)
             name = re.sub(pattern, "", name, flags=re.IGNORECASE).strip()
         
-    # Strip common trailing verbs/conjunctions
     trailing_strip = [
         "is", "are", "was", "were", "has", "had", "have", "married", "introduced", "called", "named", "recently"
     ]
@@ -95,23 +78,19 @@ def clean_name(name: str) -> str:
         
     return name.strip()
 
-
 def normalize_synonyms(text: str) -> str:
     """Normalize colloquial and plural relation terms to their canonical CLUTRR equivalents."""
     replacements = {
-        # Normalize in-laws with spaces/hyphens first (crucial to prevent extracting 'law' as a name)
         r"\bfather[- ]in[- ]laws?\b": "father-in-law",
         r"\bmother[- ]in[- ]laws?\b": "mother-in-law",
         r"\bson[- ]in[- ]laws?\b": "son-in-law",
         r"\bdaughter[- ]in[- ]laws?\b": "daughter-in-law",
         
-        # Normalize grand-relations with spaces/hyphens
         r"\bgrand[- ]fathers?\b": "grandfather",
         r"\bgrand[- ]mothers?\b": "grandmother",
         r"\bgrand[- ]sons?\b": "grandson",
         r"\bgrand[- ]daughters?\b": "granddaughter",
 
-        # Normalize colloquial cousin variations first (crucial to prevent extracting 'brother' or 'sister')
         r"\bcousin[- ](?:bros?|brothers?|sis(?:ses)?|sises?|sisters?)\b": "cousin",
         r"\bdads?\b": "father",
         r"\bdadas?\b": "father",
@@ -166,25 +145,18 @@ def normalize_synonyms(text: str) -> str:
         text = re.sub(pattern, canonical, text, flags=re.IGNORECASE)
     return text
 
-
 def normalise_text(text: str) -> str:
     """Replace smart/curly quotes with straight ASCII equivalents and normalize synonyms."""
-    text = text.replace("\u2018", "'")   # left single
-    text = text.replace("\u2019", "'")   # right single (most common)
-    text = text.replace("\u201C", '"')   # left double
-    text = text.replace("\u201D", '"')   # right double
-    text = text.replace("\u2013", "-")   # en-dash
-    text = text.replace("\u2014", "-")   # em-dash
+    text = text.replace("\u2018", "'")
+    text = text.replace("\u2019", "'")
+    text = text.replace("\u201C", '"')
+    text = text.replace("\u201D", '"')
+    text = text.replace("\u2013", "-")
+    text = text.replace("\u2014", "-")
     text = normalize_synonyms(text)
     return text
 
-
-# ──────────────────────────────────────────────────────────────────
-# Compiled regex patterns for fact extraction (Section 3.2.6)
-# Ordered specific-to-general as per the paper.
-# ──────────────────────────────────────────────────────────────────
 FACT_PATTERNS = [
-    # 0. Self-Identity Patterns ("my name is X", "I am X", "X is my name")
     (re.compile(
         r"(?:my\s+name\s+is|i\s+am|i'm)\s+([\w]+)(?:\.|,|;|!|\?|$)",
         re.IGNORECASE
@@ -194,7 +166,6 @@ FACT_PATTERNS = [
         re.IGNORECASE
     ), lambda m: ("Speaker", "identity", clean_name(m.group(1)))),
 
-    # 0.1 Conversational Introductory Patterns ("Meet my father, Robert", "This is his sister Jessica")
     (re.compile(
         rf"(?:meet|this\s+is)\s+my\s+({RELATION_WORDS})(?:\s+named|\s*,\s+his\s+name\s+is|\s*,\s+her\s+name\s+is|\s*,)\s+([\w\s]+?)(?:\.|,|;|!|\?|$)",
         re.IGNORECASE
@@ -208,162 +179,131 @@ FACT_PATTERNS = [
         re.IGNORECASE
     ), lambda m: (clean_name(m.group(2)), m.group(1).strip().lower(), "Speaker" if "my" in m.group(0).lower() else "__LAST_ENTITY__")),
 
-    # 1. "X is the Y of Z"
     (re.compile(
         rf"([\w\s]+?)\s+is\s+the\s+({RELATION_WORDS})\s+of\s+([\w\s]+?)(?:\.|,|;|!|\?|$)",
         re.IGNORECASE
     ), lambda m: (clean_name(m.group(1)), m.group(2).strip().lower(), clean_name(m.group(3)))),
 
-    # 2. "X is Y's Z"  (possessive with straight apostrophe)
     (re.compile(
         rf"([\w\s]+?)\s+is\s+([\w]+)'s\s+({RELATION_WORDS})(?:\.|,|;|!|\?|$)",
         re.IGNORECASE
     ), lambda m: (clean_name(m.group(1)), m.group(3).strip().lower(), clean_name(m.group(2)))),
 
-    # 3. "X is my Y"
     (re.compile(
         rf"([\w\s]+?)\s+is\s+my\s+({RELATION_WORDS})(?:\.|,|;|!|\?|$)",
         re.IGNORECASE
     ), lambda m: (clean_name(m.group(1)), m.group(2).strip().lower(), "Speaker")),
 
-    # 4. "X is his/her Y"
     (re.compile(
         rf"([\w\s]+?)\s+is\s+(?:his|her)\s+({RELATION_WORDS})(?:\.|,|;|!|\?|$)",
         re.IGNORECASE
     ), lambda m: (clean_name(m.group(1)), m.group(2).strip().lower(), "__LAST_ENTITY__")),
 
-    # 5. "X's Y is Z"  (possessive subject)
     (re.compile(
         rf"([\w]+)'s\s+({RELATION_WORDS})\s+is\s+([\w\s]+?)(?:\.|,|;|!|\?|$)",
         re.IGNORECASE
     ), lambda m: (clean_name(m.group(3)), m.group(2).strip().lower(), clean_name(m.group(1)))),
 
-    # 6. "my Y is X"
     (re.compile(
         rf"my\s+({RELATION_WORDS})\s+is\s+([\w\s]+?)(?:\.|,|;|!|\?|$)",
         re.IGNORECASE
     ), lambda m: (clean_name(m.group(2)), m.group(1).strip().lower(), "Speaker")),
 
-    # 7. "his/her Y is X"
     (re.compile(
         rf"(?:his|her)\s+({RELATION_WORDS})\s+is\s+([\w\s]+?)(?:\.|,|;|!|\?|$)",
         re.IGNORECASE
     ), lambda m: (clean_name(m.group(2)), m.group(1).strip().lower(), "__LAST_ENTITY__")),
 
-    # 8. "X and Y are brothers"
     (re.compile(
         r"([\w\s]+?)\s+and\s+([\w\s]+?)\s+are\s+brothers(?:\.|,|;|!|\?|$)",
         re.IGNORECASE
     ), lambda m: (clean_name(m.group(1)), "brother", clean_name(m.group(2)))),
 
-    # 9. "X and Y are sisters"
     (re.compile(
         r"([\w\s]+?)\s+and\s+([\w\s]+?)\s+are\s+sisters(?:\.|,|;|!|\?|$)",
         re.IGNORECASE
     ), lambda m: (clean_name(m.group(1)), "sister", clean_name(m.group(2)))),
 
-    # 10. "X and Y are siblings"
     (re.compile(
         r"([\w\s]+?)\s+and\s+([\w\s]+?)\s+are\s+siblings(?:\.|,|;|!|\?|$)",
         re.IGNORECASE
     ), lambda m: (clean_name(m.group(1)), "sibling", clean_name(m.group(2)))),
 
-    # 11. "X and Y are married" / "X married Y"
     (re.compile(
         r"([\w\s]+?)\s+(?:and\s+([\w\s]+?)\s+are\s+married|married\s+([\w\s]+?))(?:\.|,|;|!|\?|$)",
         re.IGNORECASE
     ), lambda m: (clean_name(m.group(1)), "husband", clean_name(m.group(2) or m.group(3)))),
 
-    # 12. "X has a Y named Z" / "X has a Y, Z" / "X has a Y Z" / "X has Y Z"
     (re.compile(
         rf"([\w\s]+?)\s+has\s+(?:a\s+)?({RELATION_WORDS})(?:\s+named|\s*,)?\s+([\w\s]+?)(?:\.|,|;|!|\?|$)",
         re.IGNORECASE
     ), lambda m: (clean_name(m.group(3)), m.group(2).strip().lower(), clean_name(m.group(1)))),
 
-    # 13. "X gave birth to Y" / "X had Y"
     (re.compile(
         r"([\w\s]+?)\s+(?:gave\s+birth\s+to|had)\s+([\w\s]+?)(?:\.|,|;|!|\?|$)",
         re.IGNORECASE
     ), lambda m: (clean_name(m.group(1)), "parent", clean_name(m.group(2)))),
 
-    # 14. "X, Y's Z" (comma-separated possessive)
     (re.compile(
         rf"([\w\s]+?),\s+([\w]+)'s\s+({RELATION_WORDS})(?:\.|,|;|!|\?|$)",
         re.IGNORECASE
     ), lambda m: (clean_name(m.group(1)), m.group(3).strip().lower(), clean_name(m.group(2)))),
 
-    # 15. "X, the Y of Z"
     (re.compile(
         rf"([\w\s]+?),\s+the\s+({RELATION_WORDS})\s+of\s+([\w\s]+?)(?:\.|,|;|!|\?|$)",
         re.IGNORECASE
     ), lambda m: (clean_name(m.group(1)), m.group(2).strip().lower(), clean_name(m.group(3)))),
 
-    # 16. "X and Y are parent and child"
     (re.compile(
         r"([\w\s]+?)\s+and\s+([\w\s]+?)\s+are\s+parent\s+and\s+child(?:\.|,|;|!|\?|$)",
         re.IGNORECASE
     ), lambda m: (clean_name(m.group(1)), "parent", clean_name(m.group(2)))),
 
-    # 17. "X, mother of Y" (no 'the')
     (re.compile(
         rf"([\w\s]+?),\s+({RELATION_WORDS})\s+of\s+([\w\s]+?)(?:\.|,|;|!|\?|$)",
         re.IGNORECASE
     ), lambda m: (clean_name(m.group(1)), m.group(2).strip().lower(), clean_name(m.group(3)))),
 
-    # 18. "X's Y, Z"
     (re.compile(
         rf"([\w]+)'s\s+({RELATION_WORDS}),\s+([\w\s]+?)(?:\.|,|;|!|\?|$)",
         re.IGNORECASE
     ), lambda m: (clean_name(m.group(3)), m.group(2).strip().lower(), clean_name(m.group(1)))),
 
-    # 19. "X is a Y to Z"
     (re.compile(
         rf"([\w\s]+?)\s+is\s+a\s+({RELATION_WORDS})\s+to\s+([\w\s]+?)(?:\.|,|;|!|\?|$)",
         re.IGNORECASE
     ), lambda m: (clean_name(m.group(1)), m.group(2).strip().lower(), clean_name(m.group(3)))),
 
-    # 20. "X is the Y to Z"
     (re.compile(
         rf"([\w\s]+?)\s+is\s+the\s+({RELATION_WORDS})\s+to\s+([\w\s]+?)(?:\.|,|;|!|\?|$)",
         re.IGNORECASE
     ), lambda m: (clean_name(m.group(1)), m.group(2).strip().lower(), clean_name(m.group(3)))),
 
-    # 21. "X was the Y of Z"
     (re.compile(
         rf"([\w\s]+?)\s+was\s+the\s+({RELATION_WORDS})\s+of\s+([\w\s]+?)(?:\.|,|;|!|\?|$)",
         re.IGNORECASE
     ), lambda m: (clean_name(m.group(1)), m.group(2).strip().lower(), clean_name(m.group(3)))),
 
-    # 22. "X was Z's Y"
     (re.compile(
         rf"([\w\s]+?)\s+was\s+([\w]+)'s\s+({RELATION_WORDS})(?:\.|,|;|!|\?|$)",
         re.IGNORECASE
     ), lambda m: (clean_name(m.group(1)), m.group(3).strip().lower(), clean_name(m.group(2)))),
 
-    # 23. "Z calls X his/her Y"
     (re.compile(
         rf"([\w\s]+?)\s+calls\s+([\w\s]+?)\s+(?:his|her)\s+({RELATION_WORDS})(?:\.|,|;|!|\?|$)",
         re.IGNORECASE
     ), lambda m: (clean_name(m.group(2)), m.group(3).strip().lower(), clean_name(m.group(1)))),
 
-    # 24. "X and Y are husband and wife"
     (re.compile(
         r"([\w\s]+?)\s+and\s+([\w\s]+?)\s+are\s+husband\s+and\s+wife(?:\.|,|;|!|\?|$)",
         re.IGNORECASE
     ), lambda m: (clean_name(m.group(1)), "husband", clean_name(m.group(2)))),
 
-    # 25. "X and Y had Z" (X and Y are parents of Z)
     (re.compile(
         r"([\w\s]+?)\s+and\s+([\w\s]+?)\s+had\s+([\w\s]+?)(?:\.|,|;|!|\?|$)",
         re.IGNORECASE
     ), lambda m: (clean_name(m.group(1)), "parent", clean_name(m.group(3)))),
 ]
-
-
-# ──────────────────────────────────────────────────────────────────
-# Semantic Fallback Chunker - Data structures & Helpers
-# Used to capture arbitrary conversational patterns that fail regex rules.
-# ──────────────────────────────────────────────────────────────────
 
 PLURAL_MAP = {
     "fathers": "father", "mothers": "mother", "sons": "son", "daughters": "daughter",
@@ -374,7 +314,6 @@ PLURAL_MAP = {
     "siblings": "sibling", "cousins": "cousin"
 }
 
-# Stop words to prevent helper words from being misidentified as family member names
 SEMANTIC_STOP_WORDS = {
     "is", "the", "of", "a", "to", "and", "are", "have", "has", "had", "named", "called", 
     "who", "they", "his", "her", "their", "our", "him", "she", "he", "it", "its", "them",
@@ -385,7 +324,6 @@ SEMANTIC_STOP_WORDS = {
 
 def normalize_rel_word(word: str) -> str:
     word_lower = word.lower().strip()
-    # Check if word is already a recognized relation word
     rel_set = set(RELATION_WORDS.split("|"))
     if word_lower in rel_set:
         return word_lower
@@ -395,13 +333,11 @@ def normalize_rel_word(word: str) -> str:
 
 def semantic_extract_sentence(sentence: str, known_entities: set = None) -> list:
     """Extract facts from a single sentence using semantic proximity and grammatical heuristics."""
-    # Clean text but keep apostrophes and hyphens
     sentence_clean = re.sub(r"[^\w\s'-]", " ", sentence)
     words = [w for w in sentence_clean.split() if w]
     if not words:
         return []
 
-    # 1. Identify relationship words
     relations = []
     for i, w in enumerate(words):
         norm_rel = normalize_rel_word(w)
@@ -411,7 +347,6 @@ def semantic_extract_sentence(sentence: str, known_entities: set = None) -> list
     if not relations:
         return []
 
-    # 2. Identify entities (names and pronouns)
     entities = []
     stop_words = {
         "what", "how", "who", "whom", "is", "are", "do", "does", "can", "could", "the", "a", "an",
@@ -448,16 +383,13 @@ def semantic_extract_sentence(sentence: str, known_entities: set = None) -> list
         if not w_clean or len(w_clean) < 2:
             continue
         
-        # Clean name
         name = clean_name(w_clean)
         name_lower = name.lower()
         
-        # Check first-person pronoun
         if name_lower in FIRST_PERSON_PRONOUNS:
             entities.append(("Speaker", i))
             continue
             
-        # Check third-person pronoun - resolve to preceding proper name if available!
         if name_lower in THIRD_PERSON_PRONOUNS:
             preceding = [p for p in proper_names if p[1] < i]
             if preceding:
@@ -466,21 +398,17 @@ def semantic_extract_sentence(sentence: str, known_entities: set = None) -> list
                 entities.append((w_clean, i))
             continue
             
-        # Check if it's a relation word
         if normalize_rel_word(name_lower):
             continue
             
-        # Is it a known entity?
         if known_entities and name.title() in known_entities:
             entities.append((name.title(), i))
             continue
             
-        # Capitalization and stopword heuristics
         if w_clean[0].isupper() and name_lower not in stop_words:
             entities.append((name.title(), i))
             continue
             
-        # Lowercase name check for conversational inputs
         if name_lower not in stop_words and len(name) > 2:
             entities.append((name.title(), i))
 
@@ -500,7 +428,6 @@ def semantic_extract_sentence(sentence: str, known_entities: set = None) -> list
 
         words_l = [w.lower() for w in words]
 
-        # 0. Possessive on the relation word itself (e.g., "mother's", "father's") or immediate pronoun
         r_word = words[r_idx].lower()
         if r_word.endswith("'s") or r_word.endswith("'") or (r_idx > 0 and words[r_idx-1].lower() in {"my", "his", "her", "their", "our"}):
             if idx1 < r_idx and idx2 > r_idx:
@@ -508,13 +435,11 @@ def semantic_extract_sentence(sentence: str, known_entities: set = None) -> list
             if idx2 < r_idx and idx1 > r_idx:
                 return ent1, ent2
 
-        # 1. Possessives
         if is_possessive(idx1):
             return ent2, ent1
         if is_possessive(idx2):
             return ent1, ent2
 
-        # 2. Of-construction
         of_before_ent2 = False
         for j in range(max(0, idx2 - 3), idx2):
             if words_l[j] == "of":
@@ -532,7 +457,6 @@ def semantic_extract_sentence(sentence: str, known_entities: set = None) -> list
         if of_before_ent1:
             return ent2, ent1
 
-        # 3. To-construction
         to_before_ent2 = False
         for j in range(max(0, idx2 - 3), idx2):
             if words_l[j] == "to":
@@ -550,7 +474,6 @@ def semantic_extract_sentence(sentence: str, known_entities: set = None) -> list
         if to_before_ent1:
             return ent2, ent1
 
-        # 4. Proximity verbs (has, had, have, calls)
         has_verb_near_ent1 = False
         for j in range(max(0, idx1), min(len(words), r_idx)):
             if words_l[j] in {"has", "had", "have", "owns", "calls"}:
@@ -568,16 +491,13 @@ def semantic_extract_sentence(sentence: str, known_entities: set = None) -> list
         if has_verb_near_ent2:
             return ent1, ent2
 
-        # 5. Proximity copula fallback
         if abs(idx1 - r_idx) < abs(idx2 - r_idx):
             return ent1, ent2
         else:
             return ent2, ent1
 
     for rel, r_idx in relations:
-        # Case A: Two or more entities in the same sentence with a relation
         if len(entities) >= 2:
-            # Sort entities by their distance to the relation word
             sorted_ents = sorted(entities, key=lambda e: abs(e[1] - r_idx))
             ent1, idx1 = sorted_ents[0]
             ent2, idx2 = sorted_ents[1]
@@ -592,7 +512,6 @@ def semantic_extract_sentence(sentence: str, known_entities: set = None) -> list
                 seen.add(key)
                 facts.append(key)
 
-        # Case B: Exactly one entity and a first-person pronoun or implied Speaker
         elif len(entities) == 1:
             ent, idx = entities[0]
             has_first = any(w.lower() in FIRST_PERSON_PRONOUNS for w in words)
@@ -609,24 +528,20 @@ def semantic_extract_sentence(sentence: str, known_entities: set = None) -> list
 
     return facts
 
-
 def extract_facts_from_text(text: str) -> List[Tuple[str, str, str]]:
     """
     Extract kinship fact triples from a narrative text using both strict regex patterns
     and a robust semantic fallback chunker for absolute conversational coverage.
     """
-    # Normalise smart quotes and synonyms before matching
     text = normalise_text(text)
 
     facts_with_pos = []
-    seen = set()  # de-duplicate
+    seen = set()
 
-    # Extract known entities to assist fallback parser
     known_entities = set()
     for word in re.findall(r"\b[A-Z][a-z]+\b", text):
         known_entities.add(word)
 
-    # 1. Run strict regex patterns first (exact match benchmark rules)
     for pattern, extractor in FACT_PATTERNS:
         for match in pattern.finditer(text):
             try:
@@ -639,7 +554,6 @@ def extract_facts_from_text(text: str) -> List[Tuple[str, str, str]]:
             except Exception:
                 continue
 
-    # 2. Run Semantic Fallback Chunker for sentences
     sentences = re.split(r"[.!?\n]+", text)
     current_search_pos = 0
     for sent in sentences:
@@ -659,11 +573,9 @@ def extract_facts_from_text(text: str) -> List[Tuple[str, str, str]]:
                 seen.add(key)
                 facts_with_pos.append((sent_pos, (s, r, o)))
 
-    # Sort all facts chronologically by their text position
     facts_with_pos.sort(key=lambda x: x[0])
 
     return [fact for pos, fact in facts_with_pos]
-
 
 def resolve_coreferences(
     facts: List[Tuple[str, str, str]],
@@ -671,7 +583,6 @@ def resolve_coreferences(
     """
     Algorithm 1: Pronoun Coreference Resolution with dynamic gender and identity resolution.
     """
-    # 1. Infer genders of all known entities from relation facts
     genders = {}
     for k, v in COMMON_GENDERS.items():
         genders[k.title()] = v
@@ -682,13 +593,11 @@ def resolve_coreferences(
     male_relations = reliable_male | {"husband"}
     female_relations = reliable_female | {"wife"}
 
-    # Pass 1: Infer gender only from highly reliable gender-specific relations
     for _ in range(3):
         for s, r, o in facts:
             s_clean = s.strip()
             r_lower = r.lower()
             
-            # Check subject separately so pronoun objects don't prevent subject gender inference
             if not (s_clean.lower() in FIRST_PERSON_PRONOUNS or s_clean.lower() in THIRD_PERSON_PRONOUNS or s == "__LAST_ENTITY__"):
                 if s_clean.lower() not in COMMON_GENDERS and s_clean.lower() not in {k.lower() for k in genders}:
                     if r_lower in reliable_male:
@@ -696,7 +605,6 @@ def resolve_coreferences(
                     elif r_lower in reliable_female:
                         genders[s_clean] = 'F'
 
-    # Pass 2: Infer gender from spouse relations only as a fallback if not already known
     for _ in range(3):
         for s, r, o in facts:
             s_clean = s.strip()
@@ -717,7 +625,6 @@ def resolve_coreferences(
                     elif r_lower == "wife":
                         genders[o_clean] = 'M'
 
-    # 2. Resolve coreferences
     last_male = None
     last_female = None
     last_any = None
@@ -727,7 +634,6 @@ def resolve_coreferences(
         s = subject
         o = obj
 
-        # Resolve subject
         s_lower = s.lower().strip()
         if s_lower in FIRST_PERSON_PRONOUNS:
             s = "Speaker"
@@ -738,7 +644,6 @@ def resolve_coreferences(
         elif s == "__LAST_ENTITY__":
             s = last_any if last_any is not None else "Speaker"
 
-        # Resolve object
         o_lower = o.lower().strip()
         if o_lower in FIRST_PERSON_PRONOUNS:
             o = "Speaker"
@@ -749,7 +654,6 @@ def resolve_coreferences(
         elif o == "__LAST_ENTITY__":
             o = last_any if last_any is not None else "Speaker"
 
-        # Update last entity tracking using both subject and object to ensure all mentioned entities are tracked
         for ent in [s, o]:
             ent_resolved_lower = ent.lower().strip()
             if ent_resolved_lower not in (FIRST_PERSON_PRONOUNS | THIRD_PERSON_PRONOUNS | {"__last_entity__", "speaker"}):
@@ -760,7 +664,6 @@ def resolve_coreferences(
                 elif gender == 'F':
                     last_female = ent
                 else:
-                    # fallback heuristics if gender is not explicitly in genders
                     if ent == s:
                         if relation.lower() in male_relations:
                             last_male = ent
@@ -774,7 +677,6 @@ def resolve_coreferences(
 
         resolved.append((s, relation, o))
 
-    # 3. Dynamic Identity Substitution
     speaker_name = None
     for s, r, o in resolved:
         if r == "identity":
@@ -783,7 +685,6 @@ def resolve_coreferences(
             elif o == "Speaker":
                 speaker_name = s
 
-    # 3.1 Implicit Speaker Identity Resolution if not explicitly declared
     if not speaker_name:
         speaker_parents = set()
         speaker_spouses = set()
@@ -825,7 +726,6 @@ def resolve_coreferences(
                             ent_spouses.add(s_clean.lower())
 
                 if (speaker_parents and ent_parents == speaker_parents) or (speaker_spouses and ent_spouses == speaker_spouses):
-                    # Check if there is any fact asserting they are different (e.g. brother, sister, sibling)
                     assert_diff = False
                     for s, r, o in resolved:
                         s_l = s.lower().strip()
@@ -851,13 +751,11 @@ def resolve_coreferences(
             final_resolved.append((s_new, r, o_new))
         resolved = final_resolved
 
-    # 3.2 Dynamic Spouse Gender and Relation Direction Correction
     resolved_genders = {}
     for k, v in COMMON_GENDERS.items():
         resolved_genders[k.title()] = v
         resolved_genders[k.lower()] = v
 
-    # Pass 1: Infer gender only from highly reliable gender-specific relations
     for _ in range(3):
         for s, r, o in resolved:
             s_clean = s.strip()
@@ -868,7 +766,6 @@ def resolve_coreferences(
                 elif r_lower in reliable_female:
                     resolved_genders[s_clean] = 'F'
 
-    # Pass 2: Infer gender from spouse relations only as a fallback if not already known
     for _ in range(3):
         for s, r, o in resolved:
             s_clean = s.strip()
@@ -897,10 +794,8 @@ def resolve_coreferences(
             elif s_gender == 'M' and o_gender == 'F':
                 final_resolved_spouse.append((s, "husband", o))
             elif s_gender == 'M' and o_gender == 'M':
-                # Conflict: both male. Keep original relation.
                 final_resolved_spouse.append((s, r, o))
             elif s_gender == 'F' and o_gender == 'F':
-                # Conflict: both female. Keep original relation.
                 final_resolved_spouse.append((s, r, o))
             elif s_gender == 'F':
                 final_resolved_spouse.append((s, "wife", o))
@@ -916,7 +811,6 @@ def resolve_coreferences(
             final_resolved_spouse.append((s, r, o))
     resolved = final_resolved_spouse
 
-    # 4. Final post-resolution de-duplication
     final_seen = set()
     cleaned_resolved = []
     for s, r, o in resolved:
@@ -926,7 +820,6 @@ def resolve_coreferences(
             cleaned_resolved.append((s, r, o))
 
     return ResolvedFactsList(cleaned_resolved, speaker_name=speaker_name)
-
 
 def symbolic_solve(
     narrative: str,
@@ -940,7 +833,6 @@ def symbolic_solve(
       3. Run forward chaining inference (Algorithm 2)
       4. Return answer with proof trace
     """
-    # Early check for identity / self-relationship
     qs = query_subject.lower().strip()
     qo = query_object.lower().strip()
     if qs == qo and qs and qs != "?":
@@ -952,11 +844,9 @@ def symbolic_solve(
             "proof_trace": proof_trace,
         }
 
-    # Step 1: Extract facts
     raw_facts = extract_facts_from_text(narrative)
     logger.info(f"Extracted {len(raw_facts)} raw facts from narrative")
 
-    # Step 2: Resolve coreferences (Algorithm 1)
     resolved_facts = resolve_coreferences(raw_facts)
     logger.info(f"After coreference resolution: {len(resolved_facts)} facts")
 
@@ -968,7 +858,6 @@ def symbolic_solve(
             "proof_trace": ["No facts could be extracted from the narrative."],
         }
 
-    # Map query_subject and query_object from pronouns or "Speaker" to the actual speaker name if resolved
     speaker_name = getattr(resolved_facts, 'speaker_name', None)
 
     if speaker_name:
@@ -979,14 +868,11 @@ def symbolic_solve(
         if qo_lower in FIRST_PERSON_PRONOUNS | {"speaker", "me"}:
             query_object = speaker_name
 
-    # Step 3: Forward chaining (Algorithm 2)
     result = run_forward_chaining(resolved_facts, query_subject, query_object)
 
     return result
 
-
 if __name__ == "__main__":
-    # Demo
     story = (
         "Apollo is Hermes' father. "
         "Zeus is Apollo's father. "

@@ -19,9 +19,7 @@ from kinship_symbolic import symbolic_solve
 
 logger = logging.getLogger(__name__)
 
-# Confidence threshold (paper Section 3.3)
 TAU = 0.8
-
 
 def hybrid_select(
     narrative: str,
@@ -51,7 +49,6 @@ def hybrid_select(
     """
     logger.info(f"Hybrid orchestrator: query=({query_subject}, ?, {query_object})")
 
-    # Early check for identity / self-relationship
     qs = query_subject.lower().strip()
     qo = query_object.lower().strip()
     if qs == qo and qs and qs != "?":
@@ -63,7 +60,6 @@ def hybrid_select(
             "proof_trace": [f"IDENTITY: {query_subject} is the same person as {query_object}"],
         }
 
-    # ── Step 1: Symbolic path (Algorithm 3, lines 2-5) ──────────
     symbolic_result = symbolic_solve(narrative, query_subject, query_object)
 
     if symbolic_result["success"]:
@@ -80,7 +76,6 @@ def hybrid_select(
 
     logger.info("Symbolic FAILED: falling back to neural module")
 
-    # ── Step 2: Neural fallback (Algorithm 3, lines 6-9) ────────
     if neural_predict_fn is not None:
         try:
             neural_result = neural_predict_fn(
@@ -117,7 +112,6 @@ def hybrid_select(
         except Exception as e:
             logger.error(f"Neural module error: {e}")
 
-    # ── No answer available ─────────────────────────────────────
     return {
         "relation": None,
         "confidence": 0.0,
@@ -125,7 +119,6 @@ def hybrid_select(
         "proof_trace": symbolic_result["proof_trace"]
         + ["No answer: both symbolic and neural modules failed."],
     }
-
 
 if __name__ == "__main__":
     story = (

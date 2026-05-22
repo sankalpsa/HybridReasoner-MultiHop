@@ -77,27 +77,38 @@
   <!-- ==================== CONNECTIONS / FLOW LINES ==================== -->
   
   <!-- Input to Symbolic Path (Curve) -->
-  <path d="M 230 220 C 280 220, 300 120, 370 120" fill="none" stroke="url(#grad-path-sym)" stroke-width="3" stroke-linecap="round" opacity="0.85"/>
-  <circle cx="300" cy="170" r="4" fill="#10B981">
+  <path d="M 230 220 C 280 220, 320 120, 370 120" fill="none" stroke="url(#grad-path-sym)" stroke-width="3" stroke-linecap="round" opacity="0.85"/>
+  <circle cx="230" cy="220" r="4" fill="#10B981">
     <animate attributeName="cx" values="230;370" dur="4s" repeatCount="indefinite" />
     <animate attributeName="cy" values="220;120" dur="4s" repeatCount="indefinite" />
   </circle>
 
   <!-- Input to Neural Path (Curve) -->
-  <path d="M 230 220 C 280 220, 300 320, 370 320" fill="none" stroke="url(#grad-path-neu)" stroke-width="3" stroke-linecap="round" opacity="0.85"/>
-  <circle cx="300" cy="270" r="4" fill="#8B5CF6">
+  <path d="M 230 220 C 280 220, 320 320, 370 320" fill="none" stroke="url(#grad-path-neu)" stroke-width="3" stroke-linecap="round" opacity="0.85"/>
+  <circle cx="230" cy="220" r="4" fill="#8B5CF6">
     <animate attributeName="cx" values="230;370" dur="4s" repeatCount="indefinite" />
     <animate attributeName="cy" values="220;320" dur="4s" repeatCount="indefinite" />
   </circle>
 
-  <!-- Symbolic to Orchestrator Path -->
-  <path d="M 530 120 C 600 120, 610 220, 660 220" fill="none" stroke="url(#grad-path-merge-sym)" stroke-width="3" stroke-linecap="round" opacity="0.85"/>
+  <!-- Symbolic to Orchestrator Path (exits right edge of box at x=550, enters diamond left point at x=640) -->
+  <path d="M 550 120 C 590 120, 610 220, 640 220" fill="none" stroke="url(#grad-path-merge-sym)" stroke-width="3" stroke-linecap="round" opacity="0.85"/>
+  <circle cx="550" cy="120" r="4" fill="#F59E0B">
+    <animate attributeName="cx" values="550;640" dur="3s" repeatCount="indefinite" />
+    <animate attributeName="cy" values="120;220" dur="3s" repeatCount="indefinite" />
+  </circle>
   
-  <!-- Neural to Orchestrator Path -->
-  <path d="M 530 320 C 600 320, 610 220, 660 220" fill="none" stroke="url(#grad-path-merge-neu)" stroke-width="3" stroke-linecap="round" opacity="0.85"/>
+  <!-- Neural to Orchestrator Path (exits right edge of box at x=550, enters diamond left point at x=640) -->
+  <path d="M 550 320 C 590 320, 610 220, 640 220" fill="none" stroke="url(#grad-path-merge-neu)" stroke-width="3" stroke-linecap="round" opacity="0.85"/>
+  <circle cx="550" cy="320" r="4" fill="#F59E0B">
+    <animate attributeName="cx" values="550;640" dur="3s" repeatCount="indefinite" />
+    <animate attributeName="cy" values="320;220" dur="3s" repeatCount="indefinite" />
+  </circle>
 
-  <!-- Orchestrator to Output Path -->
-  <line x1="770" y1="220" x2="800" y2="220" stroke="#06B6D4" stroke-width="3" opacity="0.85"/>
+  <!-- Orchestrator to Output Path (exits diamond right point at x=750, enters output card at x=800) -->
+  <line x1="750" y1="220" x2="800" y2="220" stroke="#06B6D4" stroke-width="3" opacity="0.85"/>
+  <circle cx="750" cy="220" r="4" fill="#06B6D4">
+    <animate attributeName="cx" values="750;800" dur="2s" repeatCount="indefinite" />
+  </circle>
   
   <!-- ==================== NODES / CARDS ==================== -->
 
